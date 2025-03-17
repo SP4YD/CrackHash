@@ -1,0 +1,5 @@
+.env
+/worker/.env
+/worker/node_modules
+/manager/.env
+/manager/node_modules

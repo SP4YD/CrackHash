@@ -1,0 +1,42 @@
+services:
+  worker_1:
+    build:
+      context: ./worker
+    expose:
+      - ${WORKER_PORT}
+    networks:
+      - app_network
+
+  worker_2:
+    build:
+      context: ./worker
+    expose:
+      - ${WORKER_PORT}
+    networks:
+      - app_network
+
+  worker_3:
+    build:
+      context: ./worker
+    expose:
+      - ${WORKER_PORT}
+    networks:
+      - app_network
+
+  manager:
+    build:
+      context: ./manager
+    ports:
+      - ${MANAGER_PORT}:${MANAGER_PORT}
+    env_file:
+      - manager/.env
+    networks:
+      - app_network
+    depends_on:
+      - worker_1
+      - worker_2
+      - worker_3
+
+networks:
+  app_network:
+    driver: bridge
