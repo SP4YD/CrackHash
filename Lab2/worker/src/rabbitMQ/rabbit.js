@@ -9,12 +9,12 @@ export async function connectRabbit() {
 
     connection.on('close', () => {
       console.error('RabbitMQ connection closed')
-      setTimeout(() => connectRabbit(), 3000)
+      setTimeout(() => connectRabbit(), 5000)
     })
 
     connection.on('error', err => {
       console.error('RabbitMQ connection error')
-      setTimeout(() => connectRabbit(), 3000)
+      setTimeout(() => connectRabbit(), 5000)
     })
 
     channel = await connection.createChannel()
@@ -24,7 +24,7 @@ export async function connectRabbit() {
     await listenStatusRequests()
   } catch (err) {
     console.error('Failed to connect to RabbitMQ')
-    setTimeout(() => connectRabbit(), 5000)
+    setTimeout(() => connectRabbit(), 10000)
   }
 }
 

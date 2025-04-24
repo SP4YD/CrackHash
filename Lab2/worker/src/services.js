@@ -7,54 +7,57 @@ let currentTask = null
 const sharedBuffer = new SharedArrayBuffer(8)
 const dataView = new DataView(sharedBuffer)
 
-async function runWorker(channel, msg) {
-  dataView.setFloat64(0, 0, true)
+function runWorker(channel, msg) {
+  return new Promise(async (resolve, reject) => {
+    dataView.setFloat64(0, 0, true)
 
-  const worker = new Worker(PATH_WORKER, { workerData: { sharedBuffer } })
+    const worker = new Worker(PATH_WORKER, { workerData: { sharedBuffer } })
 
-  worker.postMessage(currentTask)
-  console.log(`(${currentTask.taskId}) Start worker with task`)
+    worker.postMessage(currentTask)
+    console.log(`(${currentTask.taskId}) Start worker with task`)
 
-  try {
-    await channel.assertExchange(EXCHANGE_NAME.RESULT_EXCHANGE, 'direct', { durable: true })
-    await channel.assertQueue(QUEUE_NAME.RESULT_QUEUE, { durable: true })
-    await channel.bindQueue(QUEUE_NAME.RESULT_QUEUE, EXCHANGE_NAME.RESULT_EXCHANGE, ROUTING_KEY.RESULT)
+    try {
+      await channel.assertExchange(EXCHANGE_NAME.RESULT_EXCHANGE, 'direct', { durable: true })
+      await channel.assertQueue(QUEUE_NAME.RESULT_QUEUE, { durable: true })
+      await channel.bindQueue(QUEUE_NAME.RESULT_QUEUE, EXCHANGE_NAME.RESULT_EXCHANGE, ROUTING_KEY.RESULT)
 
-    worker.on('message', result => {
-      try {
-        channel.publish(EXCHANGE_NAME.RESULT_EXCHANGE, ROUTING_KEY.RESULT, Buffer.from(JSON.stringify(result)), {
-          persistent: true,
-        })
-        channel.ack(msg)
-      } catch (error) {
-        console.error('Error connecting to rabbit to send the result')
-      }
-      console.log(`(${currentTask.taskId}) Finish worker with answer = `, result)
+      worker.on('message', result => {
+        try {
+          console.log(`(${currentTask.taskId}) Finish worker with answer = `, result)
+          channel.publish(EXCHANGE_NAME.RESULT_EXCHANGE, ROUTING_KEY.RESULT, Buffer.from(JSON.stringify(result)), {
+            persistent: true,
+          })
+          channel.ack(msg)
+          resolve(result)
+        } catch (error) {
+          console.error('Error connecting to RabbitMQ to send the result')
+          reject(new Error('Failed to publish the result to RabbitMQ'))
+        }
+      })
+
+      worker.on('error', err => {
+        console.error('Worker error:', err)
+        try {
+          channel.nack(msg, false, true)
+        } catch (e) {
+          console.error('Failed to nack message:', e)
+        }
+        reject(new Error('Worker error occurred'))
+      })
+
+      worker.on('exit', code => {
+        if (code !== 0) {
+          console.error(`Worker stopped with exit code ${code}`)
+          channel.nack(msg, false, true)
+          reject(new Error('Worker exited with an error'))
+        }
+      })
+    } catch (err) {
+      console.error("Couldn't connect to RabbitMQ to send answers")
       currentTask = null
-    })
-
-    worker.on('error', err => {
-      console.error('Worker error:', err)
-      try {
-        channel.nack(msg, false, true)
-      } catch (e) {
-        console.error('Failed to nack message:', e)
-      }
-      currentTask = null
-    })
-
-    worker.on('exit', code => {
-      if (code !== 0) {
-        console.error(`Worker stopped with exit code ${code}`)
-        channel.nack(msg, false, true)
-        currentTask = null
-      }
-    })
-  } catch (err) {
-    console.error("Couldn't connect to rabbit to send answers")
-    currentTask = null
-    throw new Error('Error connect to rabbit')
-  }
+      reject(new Error('Error connecting to RabbitMQ'))
+    }
+  })
 }
 
 async function listenTaskRequests() {
@@ -71,7 +74,11 @@ async function listenTaskRequests() {
         currentTask = JSON.parse(msg.content.toString())
         console.log(`(${currentTask.taskId}) Received a new request from the manager, currentTask = `, currentTask)
 
-        runWorker(channel, msg)
+        try {
+          await runWorker(channel, msg);
+        } catch (error) {
+          console.error('Worker failed:', error);
+        }
       }
     })
   } catch (error) {

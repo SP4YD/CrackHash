@@ -127,7 +127,12 @@ async function getStatus(req, res) {
         totalPercentage += Number(percentage)
       }
 
-      totalPercentage = totalPercentage / NUMBER_WORKERS
+      if (percentages.length > 0) {
+        totalPercentage = totalPercentage / NUMBER_WORKERS
+      } else {
+        totalPercentage = 0
+      }
+
       res.json({
         status: task.status,
         data: task.data,
@@ -152,6 +157,7 @@ async function consumeResults() {
     await channel.assertExchange(EXCHANGE_NAME.RESULT_EXCHANGE, 'direct', { durable: true })
     await channel.assertQueue(QUEUE_NAME.RESULT_QUEUE, { durable: true })
     await channel.bindQueue(QUEUE_NAME.RESULT_QUEUE, EXCHANGE_NAME.RESULT_EXCHANGE, ROUTING_KEY.RESULT)
+    await channel.prefetch(1)
 
     await channel.consume(QUEUE_NAME.RESULT_QUEUE, async msg => {
       if (msg) {
@@ -226,7 +232,7 @@ async function requestStatus(taskId) {
       }
     })
 
-    await new Promise(res => setTimeout(res, 2000))
+    await new Promise(res => setTimeout(res, 3000))
 
     await channel.cancel(consumeTag.consumerTag)
     return collected
